@@ -1,0 +1,31 @@
+{
+  "casc_version": "0.1",
+  "id": "org.casc.examples.synth",
+  "name": "CASC Poly",
+  "version": "1.0.0",
+  "vendor": "CASC Examples",
+  "url": "https://github.com/cogrow4/CASC",
+  "description": "16-voice polyphonic subtractive synth: 4 oscillator shapes, ADSR envelope, resonant lowpass. Plays MIDI notes.",
+  "category": "synth",
+  "features": ["instrument", "stereo"],
+  "audio_inputs": [],
+  "audio_outputs": [ { "name": "main", "channels": 2 } ],
+  "midi_input": true,
+  "midi_output": false,
+  "mpe_support": false,
+  "note_ports": [ { "name": "notes", "mpe": false } ],
+  "latency_frames": 0,
+  "tail_seconds": 1.0,
+  "hard_realtime": true,
+  "params": [
+    { "id": 0, "name": "Waveform",  "short_name": "Wave", "module": "Osc",  "min": 0.0, "max": 1.0, "default": 0.0,  "unit": "", "flags": ["automatable","stepped"], "steps": 4 },
+    { "id": 1, "name": "Cutoff",    "short_name": "Cut",  "module": "Filter","min": 0.0, "max": 1.0, "default": 0.6,  "unit": "Hz", "flags": ["automatable","modulatable"], "steps": null },
+    { "id": 2, "name": "Resonance", "short_name": "Res",  "module": "Filter","min": 0.0, "max": 1.0, "default": 0.2,  "unit": "", "flags": ["automatable","modulatable"], "steps": null },
+    { "id": 3, "name": "Attack",    "short_name": "Atk",  "module": "Env",  "min": 0.0, "max": 1.0, "default": 0.05, "unit": "s", "flags": ["automatable"], "steps": null },
+    { "id": 4, "name": "Decay",     "short_name": "Dec",  "module": "Env",  "min": 0.0, "max": 1.0, "default": 0.3,  "unit": "s", "flags": ["automatable"], "steps": null },
+    { "id": 5, "name": "Sustain",   "short_name": "Sus",  "module": "Env",  "min": 0.0, "max": 1.0, "default": 0.7,  "unit": "", "flags": ["automatable"], "steps": null },
+    { "id": 6, "name": "Release",   "short_name": "Rel",  "module": "Env",  "min": 0.0, "max": 1.0, "default": 0.3,  "unit": "s", "flags": ["automatable"], "steps": null },
+    { "id": 7, "name": "Gain",      "short_name": "Gain", "module": "Output","min": 0.0, "max": 1.0, "default": 0.8,  "unit": "", "flags": ["automatable"], "steps": null }
+  ],
+  "gui": { "type": "html", "entry": "ui.html", "width": 620, "height": 340, "resizable": false }
+}

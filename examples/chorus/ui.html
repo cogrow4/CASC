@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>CASC Chorus</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --edge:#232a34;
+    --accent:#b48cff; --accent2:#7b5bbf; --text:#e6edf3; --muted:#8b97a7;
+    --track:#222a35;
+  }
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    background:radial-gradient(140% 120% at 50% -10%,#1a2230 0%,var(--bg) 60%);
+    color:var(--text);overflow:hidden}
+  .wrap{height:100%;display:flex;flex-direction:column;padding:18px 22px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+  .title{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+  .title span{color:var(--accent)}
+  .badge{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase}
+  .knobs{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:6px;align-items:center}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .knob{position:relative;width:86px;height:86px;cursor:ns-resize;touch-action:none}
+  .knob svg{display:block;overflow:visible}
+  .knob .cap{filter:drop-shadow(0 4px 10px rgba(0,0,0,.45))}
+  .label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .val{font-size:12px;font-variant-numeric:tabular-nums;color:var(--text);
+    background:var(--panel);border:1px solid var(--edge);border-radius:6px;
+    padding:3px 8px;min-width:54px;text-align:center}
+  footer{margin-top:8px;display:flex;justify-content:space-between;align-items:center}
+  .hint{font-size:10px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 10px var(--accent);display:inline-block;margin-right:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">CASC<span>·</span>Chorus</div>
+    <div class="badge">modulation · stereo</div>
+  </header>
+
+  <div class="knobs" id="knobs"></div>
+
+  <footer>
+    <div class="hint"><span class="dot"></span>drag knob vertically · double-click to reset</div>
+    <div class="badge">v1.0</div>
+  </footer>
+</div>
+
+<script>
+/* ---- CASC UI <-> DSP bridge (forward-compatible shim) ----
+ * The host injects window.casc with setParam(id,value 0..1) and a
+ * subscribe(cb) for host-driven updates. When run standalone (no host),
+ * we provide a no-op stub so the UI is still fully interactive. */
+const casc = window.casc || (window.casc = {
+  _subs:[], setParam(){}, getParam(id){return PARAMS[id].def},
+  subscribe(cb){this._subs.push(cb)}
+});
+
+const PARAMS = [
+  {id:0,label:"Rate", def:0.3, fmt:v=>(0.05+v*5.95).toFixed(2)+" Hz"},
+  {id:1,label:"Depth",def:0.5, fmt:v=>Math.round(v*100)+"%"},
+  {id:2,label:"Mix",  def:0.5, fmt:v=>Math.round(v*100)+"%"},
+];
+
+const ARC_START=-135, ARC_END=135;
+function knobSVG(){
+  return `<svg width="86" height="86" viewBox="0 0 86 86">
+    <circle cx="43" cy="43" r="36" fill="none" stroke="var(--track)" stroke-width="6"
+      stroke-linecap="round" stroke-dasharray="170 400"
+      transform="rotate(135 43 43)"/>
+    <circle class="arc" cx="43" cy="43" r="36" fill="none" stroke="var(--accent)" stroke-width="6"
+      stroke-linecap="round" stroke-dasharray="0 400"
+      transform="rotate(135 43 43)"/>
+    <g class="cap">
+      <circle cx="43" cy="43" r="27" fill="var(--panel)" stroke="var(--edge)" stroke-width="1.5"/>
+      <line class="ind" x1="43" y1="43" x2="43" y2="22" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+}
+
+function makeKnob(p){
+  const cell=document.createElement("div");cell.className="cell";
+  const knob=document.createElement("div");knob.className="knob";knob.innerHTML=knobSVG();
+  const label=document.createElement("div");label.className="label";label.textContent=p.label;
+  const val=document.createElement("div");val.className="val";
+  cell.append(knob,label,val);
+
+  let value=casc.getParam(p.id);
+  const arc=knob.querySelector(".arc");
+  const ind=knob.querySelector(".ind");
+  const CIRC=2*Math.PI*36;
+
+  function render(){
+    const ang=ARC_START+(ARC_END-ARC_START)*value;
+    ind.setAttribute("transform",`rotate(${ang} 43 43)`);
+    const sweep=(value)*(270/360)*CIRC;
+    arc.setAttribute("stroke-dasharray",`${sweep} 400`);
+    val.textContent=p.fmt(value);
+  }
+  function set(v,push){
+    value=Math.max(0,Math.min(1,v));render();
+    if(push)casc.setParam(p.id,value);
+  }
+  render();
+
+  let dragging=false,lastY=0;
+  knob.addEventListener("pointerdown",e=>{dragging=true;lastY=e.clientY;knob.setPointerCapture(e.pointerId);});
+  knob.addEventListener("pointermove",e=>{
+    if(!dragging)return;
+    const dy=lastY-e.clientY;lastY=e.clientY;
+    set(value+dy*0.005,true);
+  });
+  knob.addEventListener("pointerup",()=>dragging=false);
+  knob.addEventListener("dblclick",()=>set(p.def,true));
+
+  casc.subscribe((id,v)=>{if(id===p.id)set(v,false);});
+  return cell;
+}
+
+const host=document.getElementById("knobs");
+PARAMS.forEach(p=>host.appendChild(makeKnob(p)));
+</script>
+</body>
+</html>

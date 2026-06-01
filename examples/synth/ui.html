@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>CASC Poly</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --edge:#232a34;
+    --accent:#7ee081; --accent2:#4e9b51; --text:#e6edf3; --muted:#8b97a7;
+    --track:#222a35;
+  }
+  *{box-sizing:border-box;-webkit-user-select:none;user-select:none}
+  html,body{margin:0;height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    background:radial-gradient(140% 120% at 50% -10%,#16241a 0%,var(--bg) 60%);
+    color:var(--text);overflow:hidden}
+  .wrap{height:100%;display:flex;flex-direction:column;padding:16px 22px}
+  header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}
+  .title{font-size:15px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+  .title span{color:var(--accent)}
+  .badge{font-size:10px;color:var(--muted);letter-spacing:.18em;text-transform:uppercase}
+  .knobs{flex:1;display:grid;grid-template-columns:repeat(4,1fr);
+    gap:4px 6px;align-content:center;justify-items:center}
+  .cell{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .knob{position:relative;width:74px;height:74px;cursor:ns-resize;touch-action:none}
+  .knob svg{display:block;overflow:visible}
+  .knob .cap{filter:drop-shadow(0 4px 10px rgba(0,0,0,.45))}
+  .label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .val{font-size:11px;font-variant-numeric:tabular-nums;color:var(--text);
+    background:var(--panel);border:1px solid var(--edge);border-radius:6px;
+    padding:2px 7px;min-width:58px;text-align:center}
+  footer{margin-top:6px;display:flex;justify-content:space-between;align-items:center}
+  .hint{font-size:10px;color:var(--muted)}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 10px var(--accent);display:inline-block;margin-right:6px;vertical-align:middle}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title">CASC<span>·</span>Poly</div>
+    <div class="badge">polyphonic synth · 16 voices</div>
+  </header>
+  <div class="knobs" id="knobs"></div>
+  <footer>
+    <div class="hint"><span class="dot"></span>play MIDI · drag knob vertically · double-click to reset</div>
+    <div class="badge">v1.0</div>
+  </footer>
+</div>
+
+<script>
+const casc = window.casc || (window.casc = {
+  _subs:[], setParam(){}, getParam(id){return PARAMS[id].def},
+  subscribe(cb){this._subs.push(cb)}
+});
+
+const secFmt = v => (0.001+v*v*3).toFixed(2)+" s";
+const pct    = v => Math.round(v*100)+"%";
+const PARAMS = [
+  {id:0,label:"Wave",     def:0.0,  fmt:v=>["Sine","Saw","Square","Tri"][Math.min(3,Math.floor(v*3.999))]},
+  {id:1,label:"Cutoff",   def:0.6,  fmt:v=>Math.round(20*Math.pow(1000,v))+" Hz"},
+  {id:2,label:"Resonance",def:0.2,  fmt:pct},
+  {id:3,label:"Attack",   def:0.05, fmt:secFmt},
+  {id:4,label:"Decay",    def:0.3,  fmt:secFmt},
+  {id:5,label:"Sustain",  def:0.7,  fmt:pct},
+  {id:6,label:"Release",  def:0.3,  fmt:secFmt},
+  {id:7,label:"Gain",     def:0.8,  fmt:pct},
+];
+
+const ARC_START=-135, ARC_END=135;
+function knobSVG(){
+  return `<svg width="74" height="74" viewBox="0 0 86 86">
+    <circle cx="43" cy="43" r="36" fill="none" stroke="var(--track)" stroke-width="6"
+      stroke-linecap="round" stroke-dasharray="170 400" transform="rotate(135 43 43)"/>
+    <circle class="arc" cx="43" cy="43" r="36" fill="none" stroke="var(--accent)" stroke-width="6"
+      stroke-linecap="round" stroke-dasharray="0 400" transform="rotate(135 43 43)"/>
+    <g class="cap">
+      <circle cx="43" cy="43" r="27" fill="var(--panel)" stroke="var(--edge)" stroke-width="1.5"/>
+      <line class="ind" x1="43" y1="43" x2="43" y2="22" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </svg>`;
+}
+function makeKnob(p){
+  const cell=document.createElement("div");cell.className="cell";
+  const knob=document.createElement("div");knob.className="knob";knob.innerHTML=knobSVG();
+  const label=document.createElement("div");label.className="label";label.textContent=p.label;
+  const val=document.createElement("div");val.className="val";
+  cell.append(knob,label,val);
+  let value=casc.getParam(p.id);
+  const arc=knob.querySelector(".arc"), ind=knob.querySelector(".ind");
+  const CIRC=2*Math.PI*36;
+  function render(){
+    const ang=ARC_START+(ARC_END-ARC_START)*value;
+    ind.setAttribute("transform",`rotate(${ang} 43 43)`);
+    arc.setAttribute("stroke-dasharray",`${value*(270/360)*CIRC} 400`);
+    val.textContent=p.fmt(value);
+  }
+  function set(v,push){value=Math.max(0,Math.min(1,v));render();if(push)casc.setParam(p.id,value);}
+  render();
+  let dragging=false,lastY=0;
+  knob.addEventListener("pointerdown",e=>{dragging=true;lastY=e.clientY;knob.setPointerCapture(e.pointerId);});
+  knob.addEventListener("pointermove",e=>{if(!dragging)return;const dy=lastY-e.clientY;lastY=e.clientY;set(value+dy*0.005,true);});
+  knob.addEventListener("pointerup",()=>dragging=false);
+  knob.addEventListener("dblclick",()=>set(p.def,true));
+  casc.subscribe((id,v)=>{if(id===p.id)set(v,false);});
+  return cell;
+}
+const host=document.getElementById("knobs");
+PARAMS.forEach(p=>host.appendChild(makeKnob(p)));
+</script>
+</body>
+</html>

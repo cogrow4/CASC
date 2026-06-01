@@ -1,0 +1,27 @@
+# Build output
+/build/
+build/
+*.o
+*.a
+
+# Generated WebAssembly modules (produced from the .c sources by CMake)
+examples/*/dsp.wasm
+
+# Generated plugin archives
+*.casc
+
+# macOS cruft
+.DS_Store
+**/.DS_Store
+.cache/
+
+# Editor / IDE
+*.swp
+*~
+.vscode/
+.idea/
+
+# CMake user files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake

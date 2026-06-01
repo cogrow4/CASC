@@ -1,0 +1,8 @@
+{
+  "casc_preset_version": "0.1",
+  "plugin_id": "org.casc.examples.filter",
+  "plugin_version": "1.0.0",
+  "name": "Default",
+  "author": "CASC Examples",
+  "params": { "0": 0.7, "1": 0.2, "2": 0.0 }
+}

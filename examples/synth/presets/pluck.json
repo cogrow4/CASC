@@ -1,0 +1,17 @@
+{
+  "casc_preset_version": "0.1",
+  "plugin_id": "org.casc.examples.synth",
+  "plugin_version": "1.0.0",
+  "name": "Pluck",
+  "author": "CASC Examples",
+  "params": {
+    "0": 0.34,
+    "1": 0.7,
+    "2": 0.3,
+    "3": 0.0,
+    "4": 0.2,
+    "5": 0.1,
+    "6": 0.15,
+    "7": 0.8
+  }
+}

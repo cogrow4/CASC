@@ -1,0 +1,17 @@
+{
+  "casc_preset_version": "0.1",
+  "plugin_id": "org.casc.examples.synth",
+  "plugin_version": "1.0.0",
+  "name": "Soft Pad",
+  "author": "CASC Examples",
+  "params": {
+    "0": 0.0,
+    "1": 0.45,
+    "2": 0.15,
+    "3": 0.6,
+    "4": 0.5,
+    "5": 0.85,
+    "6": 0.7,
+    "7": 0.7
+  }
+}

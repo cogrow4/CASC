@@ -1,0 +1,39 @@
+{
+  "casc_version": "0.1",
+  "id": "org.casc.examples.gain",
+  "name": "CASC Gain",
+  "version": "1.0.0",
+  "vendor": "CASC Examples",
+  "url": "https://github.com/casc-format/casc",
+  "description": "A simple stereo gain plugin. Demonstrates the minimal CASC DSP API.",
+  "category": "utility",
+  "features": ["audio-effect", "stereo"],
+  "audio_inputs": [
+    { "name": "main", "channels": 2 }
+  ],
+  "audio_outputs": [
+    { "name": "main", "channels": 2 }
+  ],
+  "midi_input": false,
+  "midi_output": false,
+  "mpe_support": false,
+  "note_ports": [],
+  "latency_frames": 0,
+  "tail_seconds": 0.0,
+  "hard_realtime": true,
+  "params": [
+    {
+      "id": 0,
+      "name": "Gain",
+      "short_name": "Gain",
+      "module": "Main",
+      "min": 0.0,
+      "max": 1.0,
+      "default": 1.0,
+      "unit": "",
+      "flags": ["automatable", "modulatable"],
+      "steps": null
+    }
+  ],
+  "gui": null
+}

@@ -1,0 +1,27 @@
+{
+  "casc_version": "0.1",
+  "id": "org.casc.examples.distortion",
+  "name": "CASC Distortion",
+  "version": "1.0.0",
+  "vendor": "CASC Examples",
+  "url": "https://github.com/cogrow4/CASC",
+  "description": "Smooth waveshaper distortion: drive into a soft-clip transfer curve with tone, output trim and dry/wet mix. Fully stereo.",
+  "category": "distortion",
+  "features": ["audio-effect", "stereo"],
+  "audio_inputs": [ { "name": "main", "channels": 2 } ],
+  "audio_outputs": [ { "name": "main", "channels": 2 } ],
+  "midi_input": false,
+  "midi_output": false,
+  "mpe_support": false,
+  "note_ports": [],
+  "latency_frames": 0,
+  "tail_seconds": 0.0,
+  "hard_realtime": true,
+  "params": [
+    { "id": 0, "name": "Drive",  "short_name": "Drv",  "module": "Shaper", "min": 0.0, "max": 1.0, "default": 0.4, "unit": "%", "flags": ["automatable","modulatable"], "steps": null },
+    { "id": 1, "name": "Tone",   "short_name": "Tone", "module": "Shaper", "min": 0.0, "max": 1.0, "default": 0.6, "unit": "%", "flags": ["automatable","modulatable"], "steps": null },
+    { "id": 2, "name": "Output", "short_name": "Out",  "module": "Output", "min": 0.0, "max": 1.0, "default": 0.8, "unit": "%", "flags": ["automatable","modulatable"], "steps": null },
+    { "id": 3, "name": "Mix",    "short_name": "Mix",  "module": "Output", "min": 0.0, "max": 1.0, "default": 1.0, "unit": "%", "flags": ["automatable","modulatable"], "steps": null }
+  ],
+  "gui": { "type": "html", "entry": "ui.html", "width": 460, "height": 320, "resizable": false }
+}

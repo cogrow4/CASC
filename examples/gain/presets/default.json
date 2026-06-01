@@ -1,0 +1,10 @@
+{
+  "casc_preset_version": "0.1",
+  "plugin_id": "org.casc.examples.gain",
+  "plugin_version": "1.0.0",
+  "name": "Unity Gain",
+  "author": "CASC Examples",
+  "params": {
+    "0": 1.0
+  }
+}

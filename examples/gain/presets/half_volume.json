@@ -1,0 +1,10 @@
+{
+  "casc_preset_version": "0.1",
+  "plugin_id": "org.casc.examples.gain",
+  "plugin_version": "1.0.0",
+  "name": "Half Volume",
+  "author": "CASC Examples",
+  "params": {
+    "0": 0.5
+  }
+}
