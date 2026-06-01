@@ -193,6 +193,7 @@ void casc_unload(casc_plugin_t* plugin) {
     if (!plugin) return;
     if (plugin->module) wasmtime_module_delete(plugin->module);
     free(plugin->wasm_bytes);
+    free(plugin->ui_html);
     free(plugin);
 }
 
@@ -264,6 +265,9 @@ casc_instance_t* casc_instantiate(casc_plugin_t* plugin,
 
 void casc_destroy_instance(casc_instance_t* inst) {
     if (!inst) return;
+
+    /* Close the GUI if the host left it open. */
+    if (inst->ui) casc_close_ui(inst);
 
     /* Call dsp_destroy */
     call_void_i32(inst, &inst->exports.dsp_destroy, inst->dsp_handle);

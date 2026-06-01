@@ -290,6 +290,97 @@ int casc_plugin_get_feature_count(const casc_plugin_t* plugin);
 /** Returns the feature string at the given index. */
 const char* casc_plugin_get_feature(const casc_plugin_t* plugin, int index);
 
+/* -------------------------------------------------------------------------- */
+/*  GUI                                                                       */
+/* -------------------------------------------------------------------------- */
+/*
+ * CASC plugins may ship an `ui.html` (HTML/JS panel) inside the archive. The
+ * host runtime hosts it in a platform-native sandboxed WebView:
+ *   - macOS:   WKWebView
+ *   - Windows: WebView2 (Edge Chromium)
+ *   - Linux:   WebKitGTK
+ *
+ * The page talks to the DSP through an injected `window.casc` object:
+ *   window.casc.setParam(id, value)   // UI -> DSP, value normalised 0..1
+ *   window.casc.getParam(id) -> value // cached last value
+ *   window.casc.subscribe(cb)         // cb(id, value) for DSP -> UI updates
+ *
+ * libcasc bridges that object to casc_set_param/casc_get_param on the instance
+ * and forwards parameter changes from the host back into the page.
+ */
+
+/** GUI type reported by the manifest. */
+typedef enum casc_ui_type {
+    CASC_UI_NONE = 0,   /**< No GUI; host should draw a generic panel. */
+    CASC_UI_HTML = 1,   /**< ui.html, hosted in a native WebView. */
+    CASC_UI_WASM = 2,   /**< ui.wasm (reserved; not yet hosted). */
+} casc_ui_type_t;
+
+/** Returns true if the plugin ships a GUI the host can display. */
+int casc_plugin_has_ui(const casc_plugin_t* plugin);
+
+/** Returns the GUI type declared by the manifest. */
+casc_ui_type_t casc_plugin_get_ui_type(const casc_plugin_t* plugin);
+
+/** Returns the preferred GUI width in logical pixels (0 if unknown). */
+int casc_plugin_get_ui_width(const casc_plugin_t* plugin);
+
+/** Returns the preferred GUI height in logical pixels (0 if unknown). */
+int casc_plugin_get_ui_height(const casc_plugin_t* plugin);
+
+/** Returns true if the GUI may be resized by the host. */
+int casc_plugin_get_ui_resizable(const casc_plugin_t* plugin);
+
+/**
+ * Called by the host when the UI changes a parameter, so the host can record
+ * automation / notify the DAW. Set via casc_set_ui_param_callback().
+ * @param user_data Opaque pointer passed at registration.
+ * @param param_id  Parameter that changed.
+ * @param value     New normalised value (0..1).
+ */
+typedef void (*casc_ui_param_cb)(void* user_data, int param_id, double value);
+
+/**
+ * Register a callback invoked whenever the GUI sets a parameter. Optional.
+ * The callback runs on the UI/main thread. Pass NULL to clear.
+ */
+void casc_set_ui_param_callback(casc_instance_t* inst,
+                                 casc_ui_param_cb cb, void* user_data);
+
+/**
+ * Open the plugin GUI as a child of a native parent view.
+ * @param inst          Plugin instance.
+ * @param parent_handle Platform-native parent: NSView* (macOS), HWND (Windows),
+ *                      or an X11 Window / GtkWidget* (Linux). May be NULL to
+ *                      create a standalone top-level window.
+ * @return CASC_OK on success, negative error code otherwise.
+ */
+int casc_open_ui(casc_instance_t* inst, void* parent_handle);
+
+/** Close and destroy the plugin GUI (safe to call if not open). */
+void casc_close_ui(casc_instance_t* inst);
+
+/** Returns true if the GUI is currently open. */
+int casc_ui_is_open(casc_instance_t* inst);
+
+/**
+ * Resize the open GUI to the given logical pixel size.
+ * @return CASC_OK on success.
+ */
+int casc_set_ui_size(casc_instance_t* inst, int width, int height);
+
+/**
+ * Pump the GUI event loop / push pending DSP->UI updates. Call from the host's
+ * UI thread (~30–60 Hz). No-op if the GUI is not open.
+ */
+void casc_ui_tick(casc_instance_t* inst);
+
+/**
+ * Notify the open GUI that a parameter changed (e.g. from automation), so the
+ * panel can re-render. Safe to call from the UI thread.
+ */
+void casc_ui_notify_param(casc_instance_t* inst, int param_id, double value);
+
 #ifdef __cplusplus
 }
 #endif

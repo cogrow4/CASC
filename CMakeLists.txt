@@ -13,6 +13,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(CASC_BUILD_BRIDGE "Build the CLAP bridge plugin" ON)
 option(CASC_BUILD_TOOLS  "Build CLI tools (casc-pack, casc-validate)" ON)
 option(CASC_BUILD_TESTS  "Build tests" ON)
+option(CASC_BUILD_EXAMPLES "Build the bundled example plugins (needs emcc)" ON)
 
 # Platform detection
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
@@ -103,7 +104,9 @@ if(CASC_BUILD_TOOLS)
     add_subdirectory(tools)
 endif()
 
-add_subdirectory(examples)
+if(CASC_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()
 
 if(CASC_BUILD_TESTS)
     enable_testing()

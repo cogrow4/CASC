@@ -103,11 +103,22 @@ live value readouts, drag-to-edit, double-click-to-reset). The UI talks to the
 DSP through a `window.casc` parameter bridge (`casc.setParam(id, value)` /
 `casc.subscribe(cb)`), matching the format spec's WebView GUI model.
 
-> **GUI note:** `ui.html` panels are authored per the v0.1 format spec. The
-> current CLAP bridge surfaces parameters, audio ports, state, latency, tail,
-> and (for instruments) note ports — it does **not** yet host the WebView GUI,
-> so a DAW shows its generic parameter UI. Rendering `ui.html` via
-> `CLAP_EXT_GUI` is planned future work.
+> **GUI:** `ui.html` panels are hosted in a platform-native, sandboxed
+> WebView — **WKWebView** (macOS), **WebView2** (Windows), **WebKitGTK**
+> (Linux) — wired into the CLAP bridge via `CLAP_EXT_GUI`. A DAW that hosts the
+> CASC CLAP bridge renders the plugin's real custom panel, not a generic one.
+> The page talks to the DSP only through the injected `window.casc` bridge
+> (`setParam` / `getParam` / `subscribe`); see
+> [`docs/gui-protocol.md`](../casc-daw-sdk/docs/gui-protocol.md) in the DAW SDK.
+> If a platform's WebView is unavailable, libcasc falls back to a null GUI
+> backend and the host draws its generic parameter panel from the manifest.
+
+### Adding native CASC support to a DAW
+
+DAW authors can integrate CASC in a few lines using the companion
+**[casc-daw-sdk](../casc-daw-sdk)** project — a single-header library
+(`casc_daw_sdk.h`) plus a ready-built **REAPER extension** (`reaper_casc`). The
+same source works identically on Windows, macOS and Linux.
 
 ### Install all plugins (macOS)
 

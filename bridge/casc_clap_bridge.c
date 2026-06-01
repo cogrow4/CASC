@@ -16,6 +16,15 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+/* Pick the CLAP window API constant native to this build. */
+#if defined(_WIN32)
+#  define CASC_CLAP_WINDOW_API CLAP_WINDOW_API_WIN32
+#elif defined(__APPLE__)
+#  define CASC_CLAP_WINDOW_API CLAP_WINDOW_API_COCOA
+#else
+#  define CASC_CLAP_WINDOW_API CLAP_WINDOW_API_X11
+#endif
+
 /* -------------------------------------------------------------------------- */
 /*  Maximum discovered plugins                                                */
 /* -------------------------------------------------------------------------- */
@@ -62,6 +71,13 @@ typedef struct {
     int max_block_size;
     bool active;
     bool processing;
+
+    /* GUI state (CLAP_EXT_GUI) */
+    bool   gui_created;
+    bool   gui_visible;
+    bool   gui_floating;
+    int    gui_width;
+    int    gui_height;
 } casc_bridge_instance_t;
 
 /* Forward declarations for extensions */
@@ -71,6 +87,21 @@ static const clap_plugin_note_ports_t  s_ext_note_ports;
 static const clap_plugin_state_t       s_ext_state;
 static const clap_plugin_latency_t     s_ext_latency;
 static const clap_plugin_tail_t        s_ext_tail;
+static const clap_plugin_gui_t         s_ext_gui;
+
+/* Ensure a casc_instance_t exists (the GUI can be opened before activate()).
+ * The same instance is reused by activate() so GUI + audio stay in sync. */
+static casc_instance_t* bridge_ensure_instance(casc_bridge_instance_t* bi) {
+    if (!bi->instance) {
+        double sr = bi->sample_rate > 0 ? bi->sample_rate : 48000.0;
+        int    bs = bi->max_block_size > 0 ? bi->max_block_size : 512;
+        bi->instance = casc_instantiate(bi->plugin, sr, bs);
+    }
+    return bi->instance;
+}
+
+/* Host callback: UI edited a parameter -> tell the DAW to record automation. */
+static void bridge_ui_param_changed(void* user_data, int param_id, double value);
 
 /* -------------------------------------------------------------------------- */
 /*  Scan directories for .casc files                                          */
@@ -207,7 +238,10 @@ static bool bridge_init(const clap_plugin_t* plugin) {
 
 static void bridge_destroy(const clap_plugin_t* plugin) {
     casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
-    if (bi->instance) casc_destroy_instance(bi->instance);
+    if (bi->instance) {
+        casc_close_ui(bi->instance);
+        casc_destroy_instance(bi->instance);
+    }
     /* Don't unload the plugin — it's shared in g_discovered */
     free(bi);
 }
@@ -218,7 +252,13 @@ static bool bridge_activate(const clap_plugin_t* plugin, double sr,
     casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
     bi->sample_rate = sr;
     bi->max_block_size = (int)max_frames;
-    bi->instance = casc_instantiate(bi->plugin, sr, (int)max_frames);
+    /* Reuse an instance the GUI may have already created; otherwise make one.
+     * If an existing instance was built at a different rate/block, reset it. */
+    if (bi->instance) {
+        casc_reset(bi->instance, sr, (int)max_frames);
+    } else {
+        bi->instance = casc_instantiate(bi->plugin, sr, (int)max_frames);
+    }
     if (!bi->instance) return false;
     bi->active = true;
     return true;
@@ -226,7 +266,9 @@ static bool bridge_activate(const clap_plugin_t* plugin, double sr,
 
 static void bridge_deactivate(const clap_plugin_t* plugin) {
     casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
-    if (bi->instance) {
+    /* Keep the instance alive while the GUI is open (it owns the webview's
+     * param bridge); only tear it down when no GUI is attached. */
+    if (bi->instance && !bi->gui_created) {
         casc_destroy_instance(bi->instance);
         bi->instance = NULL;
     }
@@ -339,11 +381,22 @@ static const void* bridge_get_extension(const clap_plugin_t* plugin, const char*
     if (strcmp(id, CLAP_EXT_STATE) == 0)        return &s_ext_state;
     if (strcmp(id, CLAP_EXT_LATENCY) == 0)     return &s_ext_latency;
     if (strcmp(id, CLAP_EXT_TAIL) == 0)        return &s_ext_tail;
+    if (strcmp(id, CLAP_EXT_GUI) == 0) {
+        /* Only advertise a GUI when the plugin actually ships a hostable one.
+         * Otherwise the host renders its generic parameter panel. */
+        if (bi && bi->plugin && casc_plugin_has_ui(bi->plugin))
+            return &s_ext_gui;
+        return NULL;
+    }
     return NULL;
 }
 
 static void bridge_on_main_thread(const clap_plugin_t* plugin) {
-    (void)plugin;
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    /* Pump the WebView event loop so the GUI stays responsive. The host calls
+     * this on the main thread (often once per UI frame / idle). */
+    if (bi && bi->instance && casc_ui_is_open(bi->instance))
+        casc_ui_tick(bi->instance);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -577,6 +630,185 @@ static uint32_t ext_tail_get(const clap_plugin_t* plugin) {
 
 static const clap_plugin_tail_t s_ext_tail = {
     .get = ext_tail_get,
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Extension: gui (CLAP_EXT_GUI) — hosts the plugin's ui.html via libcasc     */
+/* -------------------------------------------------------------------------- */
+/*
+ * libcasc owns the platform WebView (WKWebView / WebView2 / WebKitGTK). This
+ * extension simply maps CLAP's lifecycle onto casc_open_ui/close/tick/resize
+ * and pumps the WebView event loop from the host main thread via on_main_thread.
+ */
+
+static void bridge_ui_param_changed(void* user_data, int param_id, double value) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)user_data;
+    if (!bi || !bi->host) return;
+    /* Ask the host to run the main thread so params/automation get flushed.
+     * (A full implementation would push an output param event; requesting a
+     * callback keeps this allocation-free and host-agnostic.) */
+    const clap_host_params_t* hp =
+        (const clap_host_params_t*)bi->host->get_extension(bi->host, CLAP_EXT_PARAMS);
+    if (hp && hp->request_flush) hp->request_flush(bi->host);
+    (void)param_id; (void)value;
+}
+
+static bool ext_gui_is_api_supported(const clap_plugin_t* plugin,
+                                      const char* api, bool is_floating) {
+    (void)plugin; (void)is_floating;
+    /* Embedded (set_parent) is supported on the native API; floating too. */
+    return api && strcmp(api, CASC_CLAP_WINDOW_API) == 0;
+}
+
+static bool ext_gui_get_preferred_api(const clap_plugin_t* plugin,
+                                       const char** api, bool* is_floating) {
+    (void)plugin;
+    if (api) *api = CASC_CLAP_WINDOW_API;
+    if (is_floating) *is_floating = false;   /* prefer embedding in the DAW */
+    return true;
+}
+
+static bool ext_gui_create(const clap_plugin_t* plugin,
+                            const char* api, bool is_floating) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (!api || strcmp(api, CASC_CLAP_WINDOW_API) != 0) return false;
+    if (!casc_plugin_has_ui(bi->plugin)) return false;
+
+    if (!bridge_ensure_instance(bi)) return false;
+
+    /* Route UI parameter edits back to the host. */
+    casc_set_ui_param_callback(bi->instance, bridge_ui_param_changed, bi);
+
+    bi->gui_floating = is_floating;
+    bi->gui_width  = casc_plugin_get_ui_width(bi->plugin);
+    bi->gui_height = casc_plugin_get_ui_height(bi->plugin);
+    if (bi->gui_width  <= 0) bi->gui_width  = 480;
+    if (bi->gui_height <= 0) bi->gui_height = 320;
+    bi->gui_created = true;
+    /* The actual WebView is opened in set_parent (embedded) or show (floating)
+     * once we have a window handle. */
+    return true;
+}
+
+static void ext_gui_destroy(const clap_plugin_t* plugin) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (bi->instance) casc_close_ui(bi->instance);
+    bi->gui_created = false;
+    bi->gui_visible = false;
+    /* If the audio side was already deactivated, the instance was kept alive
+     * only for the GUI — release it now. */
+    if (bi->instance && !bi->active) {
+        casc_destroy_instance(bi->instance);
+        bi->instance = NULL;
+    }
+}
+
+static bool ext_gui_set_scale(const clap_plugin_t* plugin, double scale) {
+    (void)plugin; (void)scale;
+    return false;   /* Cocoa/WebView use logical pixels; ignore. */
+}
+
+static bool ext_gui_get_size(const clap_plugin_t* plugin,
+                              uint32_t* width, uint32_t* height) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (width)  *width  = (uint32_t)(bi->gui_width  > 0 ? bi->gui_width  : 480);
+    if (height) *height = (uint32_t)(bi->gui_height > 0 ? bi->gui_height : 320);
+    return true;
+}
+
+static bool ext_gui_can_resize(const clap_plugin_t* plugin) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    return casc_plugin_get_ui_resizable(bi->plugin) ? true : false;
+}
+
+static bool ext_gui_get_resize_hints(const clap_plugin_t* plugin,
+                                      clap_gui_resize_hints_t* hints) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (!hints) return false;
+    memset(hints, 0, sizeof(*hints));
+    hints->can_resize_horizontally = casc_plugin_get_ui_resizable(bi->plugin) ? true : false;
+    hints->can_resize_vertically   = hints->can_resize_horizontally;
+    hints->preserve_aspect_ratio   = false;
+    return hints->can_resize_horizontally;
+}
+
+static bool ext_gui_adjust_size(const clap_plugin_t* plugin,
+                                 uint32_t* width, uint32_t* height) {
+    (void)plugin; (void)width; (void)height;
+    return true;   /* accept any size */
+}
+
+static bool ext_gui_set_size(const clap_plugin_t* plugin,
+                              uint32_t width, uint32_t height) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    bi->gui_width  = (int)width;
+    bi->gui_height = (int)height;
+    if (bi->instance && casc_ui_is_open(bi->instance))
+        casc_set_ui_size(bi->instance, (int)width, (int)height);
+    return true;
+}
+
+static bool ext_gui_set_parent(const clap_plugin_t* plugin,
+                                const clap_window_t* window) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (!window || !bi->gui_created) return false;
+    if (!bridge_ensure_instance(bi)) return false;
+
+    /* window->ptr aliases the native handle: NSView (cocoa), HWND (win32),
+     * or X11 Window. libcasc's backend interprets it per-platform. */
+    void* parent = window->ptr;
+    int rc = casc_open_ui(bi->instance, parent);
+    if (rc != CASC_OK) return false;
+    casc_set_ui_size(bi->instance, bi->gui_width, bi->gui_height);
+    return true;
+}
+
+static bool ext_gui_set_transient(const clap_plugin_t* plugin,
+                                   const clap_window_t* window) {
+    (void)plugin; (void)window;
+    return false;   /* floating-window stacking not managed by libcasc */
+}
+
+static void ext_gui_suggest_title(const clap_plugin_t* plugin, const char* title) {
+    (void)plugin; (void)title;
+}
+
+static bool ext_gui_show(const clap_plugin_t* plugin) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    if (!bi->gui_created) return false;
+    if (!bridge_ensure_instance(bi)) return false;
+
+    /* Floating window: no parent was supplied, so open standalone now. */
+    if (bi->gui_floating && !casc_ui_is_open(bi->instance)) {
+        if (casc_open_ui(bi->instance, NULL) != CASC_OK) return false;
+        casc_set_ui_size(bi->instance, bi->gui_width, bi->gui_height);
+    }
+    bi->gui_visible = true;
+    return casc_ui_is_open(bi->instance) ? true : false;
+}
+
+static bool ext_gui_hide(const clap_plugin_t* plugin) {
+    casc_bridge_instance_t* bi = (casc_bridge_instance_t*)plugin->plugin_data;
+    bi->gui_visible = false;
+    return true;
+}
+
+static const clap_plugin_gui_t s_ext_gui = {
+    .is_api_supported  = ext_gui_is_api_supported,
+    .get_preferred_api = ext_gui_get_preferred_api,
+    .create            = ext_gui_create,
+    .destroy           = ext_gui_destroy,
+    .set_scale         = ext_gui_set_scale,
+    .get_size          = ext_gui_get_size,
+    .can_resize        = ext_gui_can_resize,
+    .get_resize_hints  = ext_gui_get_resize_hints,
+    .adjust_size       = ext_gui_adjust_size,
+    .set_size          = ext_gui_set_size,
+    .set_parent        = ext_gui_set_parent,
+    .set_transient     = ext_gui_set_transient,
+    .suggest_title     = ext_gui_suggest_title,
+    .show              = ext_gui_show,
+    .hide              = ext_gui_hide,
 };
 
 /* -------------------------------------------------------------------------- */

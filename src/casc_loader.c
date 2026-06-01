@@ -152,3 +152,30 @@ char* casc_loader_read_manifest_only(const char* path) {
     result[size] = '\0';
     return result;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Generic single-entry extraction (used for ui.html, assets, etc.)          */
+/* -------------------------------------------------------------------------- */
+
+void* casc_loader_extract_entry(const char* path, const char* entry_name,
+                                 size_t* out_len) {
+    if (out_len) *out_len = 0;
+    if (!path || !entry_name) return NULL;
+
+    mz_zip_archive zip;
+    memset(&zip, 0, sizeof(zip));
+    if (!mz_zip_reader_init_file(&zip, path, 0)) return NULL;
+
+    size_t size = 0;
+    void* data = extract_file(&zip, entry_name, &size, NULL, 0);
+    mz_zip_reader_end(&zip);
+    if (!data) return NULL;
+
+    /* Null-terminate so callers can treat text entries as C strings. */
+    uint8_t* result = (uint8_t*)realloc(data, size + 1);
+    if (!result) { free(data); return NULL; }
+    result[size] = '\0';
+
+    if (out_len) *out_len = size;
+    return result;
+}

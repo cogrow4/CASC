@@ -101,6 +101,12 @@ struct casc_plugin {
     uint8_t*            wasm_bytes;
     size_t              wasm_bytes_len;
 
+    /* Optional ui.html bytes (extracted lazily on first GUI open; NULL if
+     * the archive has no ui.html). Null-terminated UTF-8. */
+    char*               ui_html;
+    size_t              ui_html_len;
+    bool                ui_html_checked;    /* extraction attempted already */
+
     /* Compiled Wasm module (shared across instances) */
     wasm_engine_t*      engine;
     wasmtime_module_t*  module;
@@ -156,6 +162,12 @@ struct casc_instance {
     int32_t             wasm_in_ptr;
     int32_t             wasm_out_ptr;
     size_t              buf_alloc_size;
+
+    /* GUI state (opaque platform handle managed by casc_ui_*.c). NULL when
+     * the GUI is closed. */
+    void*               ui;
+    casc_ui_param_cb    ui_param_cb;
+    void*               ui_param_cb_user;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -172,6 +184,12 @@ casc_error_t casc_loader_extract(const char* path,
                                   char** out_manifest_json, size_t* out_manifest_len,
                                   char* err_buf, size_t err_buf_len);
 char* casc_loader_read_manifest_only(const char* path);
+
+/* Extract one named entry from a .casc archive to the heap. Returns NULL if the
+ * entry is absent. The returned buffer is null-terminated (one extra byte past
+ * *out_len) so it is safe to treat text entries (ui.html) as C strings. */
+void* casc_loader_extract_entry(const char* path, const char* entry_name,
+                                 size_t* out_len);
 
 /* casc_wasm.c */
 wasm_engine_t* casc_wasm_get_engine(void);
@@ -198,6 +216,43 @@ casc_error_t casc_aot_cache_load(wasm_engine_t* engine,
 
 /* casc_host_imports.c */
 casc_error_t casc_host_imports_define(wasmtime_linker_t* linker);
+
+/* -------------------------------------------------------------------------- */
+/*  Platform GUI backend (casc_ui_mac.m / casc_ui_win.c / casc_ui_gtk.c /     */
+/*  casc_ui_null.c)                                                           */
+/* -------------------------------------------------------------------------- */
+/*
+ * Each platform provides a WebView-backed implementation of these four hooks.
+ * casc_ui.c (portable) drives them and owns the JS<->DSP bridge protocol.
+ *
+ * `bridge` is a casc_ui_bridge_t* the backend calls back into when the page
+ * emits a setParam message. It is defined privately in casc_ui.c.
+ */
+typedef struct casc_ui_bridge casc_ui_bridge_t;
+
+/* Called by the platform backend when the hosted page invokes
+ * window.casc.setParam(id, value). */
+void casc_ui_on_set_param(casc_ui_bridge_t* bridge, int param_id, double value);
+
+/* Returns the bootstrap JavaScript (window.casc shim) the backend must inject
+ * before the page's own scripts run. Caller must free(). */
+char* casc_ui_make_bootstrap_js(casc_instance_t* inst);
+
+/*
+ * Backend hooks. A backend that is unavailable on the current platform returns
+ * CASC_ERR_IO from casc_ui_backend_open so the host can fall back to a generic
+ * panel. `*out_handle` receives an opaque per-GUI pointer.
+ */
+casc_error_t casc_ui_backend_open(casc_instance_t* inst, void* parent_handle,
+                                   const char* html, size_t html_len,
+                                   const char* bootstrap_js,
+                                   casc_ui_bridge_t* bridge,
+                                   int width, int height, bool resizable,
+                                   void** out_handle);
+void casc_ui_backend_close(void* handle);
+void casc_ui_backend_tick(void* handle);
+void casc_ui_backend_eval_js(void* handle, const char* js);
+casc_error_t casc_ui_backend_set_size(void* handle, int width, int height);
 
 #ifdef __cplusplus
 }
