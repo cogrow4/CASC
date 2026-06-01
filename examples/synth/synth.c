@@ -44,9 +44,13 @@ static float pow2f(float x){
     return r;
 }
 
-/* MIDI note -> Hz: 440 * 2^((note-69)/12) */
+/* MIDI note -> Hz: 440 * 2^((note-69)/12).
+ * pow2f() only handles x>=0, so fold negative exponents via 2^-e = 1/2^e.
+ * Without this every note below A4 (69) collapsed to 440 Hz. */
 static float note_to_hz(int note){
-    return 440.0f * pow2f(((float)note - 69.0f) * (1.0f/12.0f));
+    float e = ((float)note - 69.0f) * (1.0f/12.0f);
+    if (e < 0.0f) return 440.0f / pow2f(-e);
+    return 440.0f * pow2f(e);
 }
 
 /* cutoff normalised -> Hz, 20 .. ~20000 ; 1000^v = 2^(v*9.96578) */

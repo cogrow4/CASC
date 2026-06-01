@@ -45,4 +45,12 @@ if(TARGET synth-casc)
     add_dependencies(test_synth_midi synth-casc)
     add_test(NAME test_synth_midi
         COMMAND test_synth_midi "${CMAKE_BINARY_DIR}/synth.casc")
+
+    # Pitch regression: ensures each MIDI note plays its own frequency
+    # (catches "every key plays C4"). note 72 must be ~2x note 60.
+    add_executable(test_synth_pitch test_synth_pitch.c)
+    target_link_libraries(test_synth_pitch PRIVATE casc miniz cjson m)
+    add_dependencies(test_synth_pitch synth-casc)
+    add_test(NAME test_synth_pitch
+        COMMAND test_synth_pitch "${CMAKE_BINARY_DIR}/synth.casc")
 endif()
